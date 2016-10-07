@@ -146,3 +146,4 @@ Section Test.
     intros.
     semigroup.
   Qed.
+End Test.
