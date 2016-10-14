@@ -1,4 +1,4 @@
 # nfreasoning
 An automated equational reasoning library for Coq
 
-*Semigroup.v : tactic for semigroups
+* Semigroup.v : tactic for semigroups
