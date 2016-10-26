@@ -38,8 +38,10 @@ Record GAlgebra K G (dim : G -> nat)(KField : Field K) := mkVS
     Gscalar_plus_distrib : forall (k : K)(l1 l2 : G), dim l1 = dim l2 ->
       Gscalar k (Gplus l1 l2) = Gplus (Gscalar k l1) (Gscalar k l2);
     Gscalar_zero : forall (l : G), Gscalar KField.(Kzero) l = Gzero (dim l);
-    Kplus_scalar_distrib : forall (k1 k2 : K)(l : G), Gscalar (KField.(Kplus) k1 k2) l = Gplus (Gscalar k1 l) (Gscalar k2 l);
-    Kmult_scalar_comm : forall (k1 k2 : K)(l : G), Gscalar (KField.(Kmult) k1 k2) l = Gscalar k1 (Gscalar k2 l);
+    Kplus_scalar_distrib : forall (k1 k2 : K)(l : G),
+      Gplus (Gscalar k1 l) (Gscalar k2 l) = Gscalar (KField.(Kplus) k1 k2) l;
+    Kmult_scalar_comm : forall (k1 k2 : K)(l : G),
+      Gscalar k1 (Gscalar k2 l) = Gscalar (KField.(Kmult) k1 k2) l;
     Gscalar_one : forall (l : G), Gscalar KField.(Kone) l = l;
     Gscalar_mult_comm_l : forall (k : K)(l1 l2 : G), dim l1 = dim l2 ->
       Gmult (Gscalar k l1) l2 = Gscalar k (Gmult l1 l2);
@@ -74,7 +76,7 @@ Section GAlgebra.
   Proof with simpl in *.
     intros. subst. rewrite G_GAlg.(Gminus_def).
     rewrite <- (G_GAlg.(Gscalar_one) l) at 1...
-    rewrite <- G_GAlg.(Kplus_scalar_distrib)...
+    rewrite G_GAlg.(Kplus_scalar_distrib)...
     replace (K1 +! (-! K1)) with K0 by field.
     apply G_GAlg.(Gscalar_zero).
   Qed.
@@ -220,7 +222,7 @@ Section GAlgebra.
     end.
 
   Lemma getKey_In : forall n val table,
-    In (getKey n val table, val) table \/ getKey n val table = G0 n \/ getKey n val table = G1 n.
+    In (getKey n val table) (map fst table) \/ getKey n val table = G0 n \/ getKey n val table = G1 n.
   Proof with simpl in *.
     intros. destruct val as [|[]]; [auto..|].
     unfold getKey.
@@ -266,7 +268,7 @@ Section GAlgebra.
     end.
 
   Definition table_dim (table : list (G * nat))(n : nat) :=
-    forall x, In x table -> dim (fst x) = n.
+    forall x, In x (map fst table) -> dim x = n.
 
   Lemma getKey_dim : forall n val table,
     table_dim table n ->
@@ -432,3 +434,124 @@ Section GAlgebra.
   Qed.
 
 End GAlgebra.
+
+Create HintDb galg.
+Hint Rewrite Gminus_def Gmult_zero_l Gmult_zero_r Gplus_ident_l Gplus_ident_r
+  Gmult_ident_l Gmult_ident_r Gplus_mult_distrib_l Gplus_mult_distrib_r
+  Gscalar_plus_distrib Gscalar_zero Gscalar_one Gscalar_mult_comm_l
+  Gscalar_mult_comm_r Kplus_scalar_distrib Kmult_scalar_comm Gplus_assoc
+  Gmult_assoc : galg.
+
+Create HintDb gdim.
+Hint Rewrite Gzero_dim Gone_dim Gplus_dim Gmult_dim Gscalar_dim : gdim.
+
+Ltac lookup key table :=
+  match table with
+  | nil => constr:(@None nat)
+  | ?t :: ?table' =>
+    match t with
+    | (key, ?n) => constr:(Some n)
+    | _ => lookup key table'
+    end
+  end.
+
+Ltac gen_table_term galg x n table :=
+  let opt := lookup x table in
+  let g1 := eval simpl in (Gone galg) in
+  let gmult := eval simpl in (Gmult galg) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  match opt with
+  | None => 
+    match x with
+    | gscalar _ ?y => gen_table_term galg y n table
+    | gmult ?y ?z =>
+      let res := gen_table_term galg y n table in
+      match res with
+      | (?n', ?table') => gen_table_term galg z n' table'
+      end
+    | g1 _ => constr:(n, table)
+    | _ => constr:(S n, (x, n)::table)
+    end
+  | Some ?n' => constr:(n, table)
+  end.
+
+Ltac gen_table' galg x n table :=
+  let opt := lookup x table in
+  let g0 := eval simpl in (Gzero galg) in
+  let gplus := eval simpl in (Gplus galg) in
+  match opt with
+  | None =>
+    match x with
+    | gplus ?y ?z =>
+      let res := gen_table_term galg y n table in
+      match res with
+      | (?n', ?table') => gen_table' galg z n' table'
+      end
+    | g0 _ => constr:(n, table)
+    | _ => gen_table_term galg x n table
+    end
+  | Some ?n' => constr:(n, table)
+  end.
+
+Ltac gen_table galg x :=
+  let G := type of x in
+  gen_table' galg x 2 (@nil (G * nat)).
+
+Ltac to_term galg table x :=
+  let gmult := eval simpl in (Gmult galg) in
+  match x with
+  | gmult ?y ?z =>
+    let ey_opt := lookup y table in
+    match ey_opt with
+    | Some ?ey  => let ez := to_term galg table z in constr:(TermCons (IVar ey) ez)
+    end
+  | _ => let ex_opt := lookup x table in
+    match ex_opt with
+    | Some ?ex => constr:(TermOne (IVar ex))
+    end
+  end.
+
+Ltac to_exp galg table x :=
+  match type of galg with
+  | GAlgebra _ ?KF =>
+  let k1 := eval simpl in (Kone KF) in
+  let gplus := eval simpl in (Gplus galg) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  match x with
+  | gplus ?y ?z =>
+    let ez := to_exp galg table z in
+    match y with
+    | gscalar ?k ?y' =>
+      let ty := to_term galg table y' in
+      constr:((k, ty) :: ez)
+    | _ =>
+      let ty := to_term galg table y in
+      constr:((k1, ty) :: ez)
+    end
+  | gscalar ?k ?x' =>
+    let tx := to_term galg table x' in
+    constr:((k, tx) :: nil)
+  | _ =>
+    let tx := to_term galg table x in
+    constr:((k1, tx) :: nil)
+  end
+  end.
+
+Ltac galgebra d galg :=
+  autorewrite with galg; [
+  match goal with
+  | |- ?x = ?y =>
+    let nt' := gen_table galg x in
+    match nt' with
+    | (?n, ?table') =>
+      let nt := gen_table' galg y n table' in
+      match nt with
+      | (_, ?table) => 
+        let ex := to_exp galg table x in
+        let ey := to_exp galg table y in
+        enough (exp2G galg d ex table = exp2G galg d ey table);
+        [simpl in *; autorewrite with galg in *; auto|
+         apply uniq; unfold exp2nf; auto|..]
+      end
+    end
+  end|..]; autorewrite with gdim; try unfold table_dim; firstorder.
