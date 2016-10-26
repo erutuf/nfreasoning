@@ -11,7 +11,7 @@ Record Field K := mkField
     Kfield : field_theory Kzero Kone Kplus Kmult Ksub Kopp Kdiv Kinv eq
   }.
 
-Record GAlgebra K G (dim : G -> nat)(KField : Field K) := mkVS
+Record GAlgebra K G (dim : G -> nat)(KField : Field K) := mkGAlg
   { Gzero : nat -> G; Gone : nat -> G;
     Gplus : G -> G -> G;
     Gminus : G -> G -> G;
@@ -24,9 +24,7 @@ Record GAlgebra K G (dim : G -> nat)(KField : Field K) := mkVS
     Gscalar_dim : forall (k : K)(l : G), dim (Gscalar k l) = dim l;
     Gminus_def : forall (l1 l2 : G), Gminus l1 l2 = Gplus l1 (Gscalar (KField.(Kopp) KField.(Kone)) l2);
     Gplus_ident_l : forall (l : G)(n : nat), dim l = n -> Gplus (Gzero n) l = l;
-    Gplus_ident_r : forall (l : G)(n : nat), dim l = n -> Gplus l (Gzero n) = l;
     Gmult_ident_l : forall (l : G)(n : nat), dim l = n -> Gmult (Gone n) l = l;
-    Gmult_ident_r : forall (l : G)(n : nat), dim l = n -> Gmult l (Gone n) = l;
     Gplus_assoc : forall (l1 l2 l3 : G), dim l1 = dim l2 -> dim l2 = dim l3 ->
       Gplus (Gplus l1 l2) l3 = Gplus l1 (Gplus l2 l3);
     Gplus_comm : forall (l1 l2 : G), dim l1 = dim l2 -> Gplus l1 l2 = Gplus l2 l1;
@@ -71,6 +69,18 @@ Section GAlgebra.
   Infix "*^" := G_GAlg.(Gmult) (at level 40, left associativity).
   Infix ".^" := G_GAlg.(Gscalar) (at level 45, no associativity).
   Infix "-^" := G_GAlg.(Gminus) (at level 50, left associativity).
+
+  Lemma  Gplus_ident_r : forall (l : G)(n : nat), dim l = n -> l +^ (G0 n) = l.
+  Proof.
+    intros. rewrite G_GAlg.(Gplus_comm). apply G_GAlg.(Gplus_ident_l). auto.
+    rewrite H. rewrite G_GAlg.(Gzero_dim). auto.
+  Qed.
+
+  Lemma Gmult_ident_r : forall (l : G)(n : nat), dim l = n -> l *^ (G1 n) = l.
+  Proof.
+    intros. rewrite G_GAlg.(Gmult_comm). apply G_GAlg.(Gmult_ident_l). auto.
+    rewrite G_GAlg.(Gone_dim). auto.
+  Qed.
 
   Lemma Gplus_minus_zero : forall l n, dim l = n -> l -^ l = G0 n.
   Proof with simpl in *.
@@ -511,9 +521,15 @@ Ltac to_term galg table x :=
     end
   end.
 
-Ltac to_exp galg table x :=
+Ltac get_field galg :=
   match type of galg with
-  | GAlgebra _ ?KF =>
+  | GAlgebra _ ?F => constr:F
+  end.
+
+Definition galg_helper G (x : G) := True.
+
+Ltac to_exp galg table x :=
+  let KF := get_field galg in
   let k1 := eval simpl in (Kone KF) in
   let gplus := eval simpl in (Gplus galg) in
   let gscalar := eval simpl in (Gscalar galg) in
@@ -534,24 +550,89 @@ Ltac to_exp galg table x :=
   | _ =>
     let tx := to_term galg table x in
     constr:((k1, tx) :: nil)
-  end
   end.
 
-Ltac galgebra d galg :=
-  autorewrite with galg; [
-  match goal with
-  | |- ?x = ?y =>
-    let nt' := gen_table galg x in
-    match nt' with
-    | (?n, ?table') =>
-      let nt := gen_table' galg y n table' in
-      match nt with
-      | (_, ?table) => 
-        let ex := to_exp galg table x in
-        let ey := to_exp galg table y in
-        enough (exp2G galg d ex table = exp2G galg d ey table);
-        [simpl in *; autorewrite with galg in *; auto|
-         apply uniq; unfold exp2nf; auto|..]
+Ltac get_dim galg :=
+  match type of galg with
+  | GAlgebra ?dim _ => constr:dim
+  end.
+
+Ltac gautorewrite galg :=
+  let gplus := eval simpl in (Gplus galg) in
+  let gmult := eval simpl in (Gmult galg) in
+  let gminus := eval simpl in (Gminus galg) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  replace gplus with (Gplus galg) by auto;
+  replace gmult with (Gmult galg) by auto;
+  replace gminus with (Gminus galg) by auto;
+  replace gscalar with (Gscalar galg) by auto;
+  autorewrite with galg; simpl.
+
+Ltac gautorewritein galg H :=
+  let gplus := eval simpl in (Gplus galg) in
+  let gmult := eval simpl in (Gmult galg) in
+  let gminus := eval simpl in (Gminus galg) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  replace gplus with (Gplus galg) in H by auto;
+  replace gmult with (Gmult galg) in H by auto;
+  replace gminus with (Gminus galg) in H by auto;
+  replace gscalar with (Gscalar galg)  in H by auto;
+  autorewrite with galg in H; simpl in H.
+
+Ltac gdautorewrite galg :=
+  let gmult := eval simpl in (Gmult galg) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  repeat (
+    replace gmult with (Gmult galg) by auto;
+    replace gscalar with (Gscalar galg) by auto
+  ); autorewrite with gdim; simpl.
+
+Ltac galg_simplify d x galg :=
+  let G := type of x in
+  let F := get_field galg in
+  let H_ := fresh "H_" in
+  assert (galg_helper x) as H_ by constructor;
+  gautorewrite galg; [gautorewritein galg H_; [
+    match type of H_ with
+    | galg_helper ?x' =>
+    clear H_;
+    let nt := gen_table galg x' in
+    match nt with
+    | (?n, ?table) =>
+      let ex := to_exp galg table x' in
+      replace x' with (exp2G galg d ex table); [|
+      simpl in *; gautorewrite galg; auto]; [
+      replace (exp2G galg d ex table) with (nf2G galg d (exp2nf F ex) table); [|
+      symmetry; apply nf_inj; unfold table_dim; firstorder]|]
+    end end|..]|..]; simpl; gautorewrite galg.
+
+Ltac field_vanish' x f0 :=
+  try (replace x with f0 by field).
+
+Ltac field_vanish galg :=
+  let F := get_field galg in
+  let f0 := eval simpl in (Kzero F) in
+  let gscalar := eval simpl in (Gscalar galg) in
+  repeat (
+    match goal with
+    | |- context[gscalar ?k _] =>
+      match goal with
+      | H : galg_helper k |- _ => fail 1
+      | _ => field_vanish' k f0; assert (galg_helper k) by constructor
       end
     end
-  end|..]; autorewrite with gdim; try unfold table_dim; firstorder.
+  ).
+
+Ltac galgebra d galg :=
+  let dim := get_dim galg in
+  let F := get_field galg in
+  let f0 := eval simpl in (Kzero F) in
+  match goal with
+  | |- ?x = _ =>
+    galg_simplify d x galg; [
+    match goal with
+    | |- _ = ?y =>
+      galg_simplify d y galg; [
+      field_vanish galg|..]
+    end|..]
+  end; [gautorewrite galg; [solve [repeat (field || f_equal)]|..]|..].
