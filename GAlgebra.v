@@ -465,47 +465,39 @@ Ltac lookup key table :=
     end
   end.
 
-Ltac gen_table_term galg x n table :=
+Ltac gen_table' ga x table :=
   let opt := lookup x table in
-  let g1 := eval simpl in (Gone galg) in
-  let gmult := eval simpl in (Gmult galg) in
-  let gscalar := eval simpl in (Gscalar galg) in
-  match opt with
-  | None => 
-    match x with
-    | gscalar _ ?y => gen_table_term galg y n table
-    | gmult ?y ?z =>
-      let res := gen_table_term galg y n table in
-      match res with
-      | (?n', ?table') => gen_table_term galg z n' table'
-      end
-    | g1 _ => constr:(n, table)
-    | _ => constr:(S n, (x, n)::table)
-    end
-  | Some ?n' => constr:(n, table)
-  end.
-
-Ltac gen_table' galg x n table :=
-  let opt := lookup x table in
-  let g0 := eval simpl in (Gzero galg) in
-  let gplus := eval simpl in (Gplus galg) in
+  let g0 := eval simpl in (Gzero ga) in
+  let g1 := eval simpl in (Gone ga) in
+  let gmult := eval simpl in (Gmult ga) in
+  let gscalar := eval simpl in (Gscalar ga) in
+  let gplus := eval simpl in (Gplus ga) in
+  let gminus := eval simpl in (Gminus ga) in
   match opt with
   | None =>
     match x with
+    | gscalar _ ?y => gen_table' ga y table
+    | gmult ?y ?z =>
+      let table' := gen_table' ga y table in
+      gen_table' ga z table'
     | gplus ?y ?z =>
-      let res := gen_table_term galg y n table in
-      match res with
-      | (?n', ?table') => gen_table' galg z n' table'
-      end
-    | g0 _ => constr:(n, table)
-    | _ => gen_table_term galg x n table
+      let table' := gen_table' ga y table in
+      gen_table' ga z table'
+    | gminus ?y ?z =>
+      let table' := gen_table' ga y table in
+      gen_table' ga z table'
+    | g0 _ => constr:table
+    | g1 _ => constr:table
+    | _ =>
+      let n := eval simpl in (2 + length table)%nat in
+      constr:((x, n) :: table)
     end
-  | Some ?n' => constr:(n, table)
+  | Some _ => constr:table
   end.
 
 Ltac gen_table galg x :=
   let G := type of x in
-  gen_table' galg x 2 (@nil (G * nat)).
+  gen_table' galg x (@nil (G * nat)).
 
 Ltac to_term galg table x :=
   let gmult := eval simpl in (Gmult galg) in
@@ -594,6 +586,17 @@ Ltac gdautorewrite ga :=
   replace gscalar with (Gscalar ga) by auto);
   autorewrite with gdim || simpl.
 
+Ltac galg_simplify_with_table d x ga table :=
+  let F := get_field ga in
+  let ex := to_exp ga table x in
+  replace x with (exp2G ga d ex table);
+  [|simpl; gautorewrite ga; auto];
+  [
+    replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table);
+    [|symmetry; apply nf_inj; unfold table_dim; firstorder]
+  |];
+  simpl; gautorewrite ga.
+
 Ltac galg_simplify d x ga :=
   let G := type of x in
   let F := get_field ga in
@@ -603,15 +606,13 @@ Ltac galg_simplify d x ga :=
     match type of H_ with
     | galg_helper ?x' =>
     clear H_;
-    let nt := gen_table ga x' in
-    match nt with
-    | (?n, ?table) =>
-      let ex := to_exp ga table x' in
-      replace x' with (exp2G ga d ex table); [|
-      simpl in *; gautorewrite ga; auto]; [
-      replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table); [|
-      symmetry; apply nf_inj; unfold table_dim; firstorder]|]
-    end end|..]|..]; simpl; gautorewrite ga.
+    let table := gen_table ga x' in
+    let ex := to_exp ga table x' in
+    replace x' with (exp2G ga d ex table); [|
+    simpl in *; gautorewrite ga; auto]; [
+    replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table); [|
+    symmetry; apply nf_inj; unfold table_dim; firstorder]|]
+    end|..]|..]; simpl; gautorewrite ga.
 
 Ltac field_vanish' x f0 :=
   try (replace x with f0 by field).
@@ -634,12 +635,39 @@ Ltac galgebra d ga :=
   let dim := get_dim ga in
   let F := get_field ga in
   let f0 := eval simpl in (Kzero F) in
+  let gplus := eval simpl in (Gplus ga) in
   match goal with
-  | |- ?x = _ =>
-    galg_simplify d x ga; [
-    match goal with
-    | |- _ = ?y =>
-      galg_simplify d y ga; [
-      field_vanish ga|..]
-    end|..]
-  end; [gautorewrite ga; [solve [repeat (field || f_equal)]|..]|..].
+  | |- ?x = ?y =>
+    let z := constr:(gplus x y) in
+    let table := gen_table ga z in
+    let H_ := fresh in
+    enough (table_dim dim table d) as H_; unfold table_dim in *;
+    [
+      gautorewrite ga;
+      [
+        match goal with
+        | |- ?x' = _ => galg_simplify_with_table d x' ga table;
+          [
+            match goal with
+            | |- _ = ?y' => galg_simplify_with_table d y' ga table;
+              [
+                field_vanish ga
+              |..]
+            end
+          |..]
+        end;
+        [
+          gautorewrite ga;
+          [
+            solve [repeat (field || f_equal)]
+          |..]
+        |..]
+      |..];
+      repeat (gdautorewrite ga);
+      repeat (rewrite H_);
+      simpl;
+      auto
+    |
+      simpl
+    ]
+  end.

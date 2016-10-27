@@ -30,11 +30,11 @@ Section Sample.
 
   Goal forall (x y z : G)(k l : K)(n : nat), (forall w : G, List.In w [x; y; z] -> dim w = n) ->
     (k .^ x) *^ y +^ l .^ z +^ (-! k) .^ x *^ y +^ k .^ z
-    = k *! l .^ x *^ y +^ ((-! l) .^ (k .^ x *^ y) +^ k .^ z) +^ l .^ z.
+    = k *! l .^ y *^ x +^ ((-! l) .^ (k .^ y *^ x) +^ k .^ z) +^ l .^ z.
   Proof.
     intros.
     galgebra n G_GAlg.
-    all: repeat (autorewrite with gdim); repeat rewrite H; firstorder.
+    firstorder.
   Qed.
 End Sample.
 
@@ -219,6 +219,6 @@ Section ListSample.
   Proof.
     intros.
     galgebra n list_GAlg.
-    all: gdautorewrite list_GAlg; substq; auto.
+    firstorder; substq; auto.
   Qed.
 End ListSample.
