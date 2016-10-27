@@ -557,15 +557,15 @@ Ltac get_dim galg :=
   | GAlgebra ?dim _ => constr:dim
   end.
 
-Ltac gautorewrite galg :=
-  let gplus := eval simpl in (Gplus galg) in
-  let gmult := eval simpl in (Gmult galg) in
-  let gminus := eval simpl in (Gminus galg) in
-  let gscalar := eval simpl in (Gscalar galg) in
-  replace gplus with (Gplus galg) by auto;
-  replace gmult with (Gmult galg) by auto;
-  replace gminus with (Gminus galg) by auto;
-  replace gscalar with (Gscalar galg) by auto;
+Tactic Notation "gautorewrite" constr(ga) :=
+  let gplus := eval simpl in (Gplus ga) in
+  let gmult := eval simpl in (Gmult ga) in
+  let gminus := eval simpl in (Gminus ga) in
+  let gscalar := eval simpl in (Gscalar ga) in
+  replace gplus with (Gplus ga) by auto;
+  replace gmult with (Gmult ga) by auto;
+  replace gminus with (Gminus ga) by auto;
+  replace gscalar with (Gscalar ga) by auto;
   autorewrite with galg; simpl.
 
 Ltac gautorewritein galg H :=
@@ -579,32 +579,39 @@ Ltac gautorewritein galg H :=
   replace gscalar with (Gscalar galg)  in H by auto;
   autorewrite with galg in H; simpl in H.
 
-Ltac gdautorewrite galg :=
-  let gmult := eval simpl in (Gmult galg) in
-  let gscalar := eval simpl in (Gscalar galg) in
-  repeat (
-    replace gmult with (Gmult galg) by auto;
-    replace gscalar with (Gscalar galg) by auto
-  ); autorewrite with gdim; simpl.
+Tactic Notation "gautorewrite" constr(ga) "in" constr(H) :=
+  gautorewritein ga H.
 
-Ltac galg_simplify d x galg :=
+Ltac gdautorewrite ga :=
+  let gplus := eval simpl in (Gplus ga) in
+  let gmult := eval simpl in (Gmult ga) in
+  let gminus := eval simpl in (Gminus ga) in
+  let gscalar := eval simpl in (Gscalar ga) in
+  repeat (
+  replace gplus with (Gplus ga) by auto;
+  replace gmult with (Gmult ga) by auto;
+  replace gminus with (Gminus ga) by auto;
+  replace gscalar with (Gscalar ga) by auto);
+  autorewrite with gdim || simpl.
+
+Ltac galg_simplify d x ga :=
   let G := type of x in
-  let F := get_field galg in
+  let F := get_field ga in
   let H_ := fresh "H_" in
   assert (galg_helper x) as H_ by constructor;
-  gautorewrite galg; [gautorewritein galg H_; [
+  gautorewrite ga; [gautorewrite ga in H_; [
     match type of H_ with
     | galg_helper ?x' =>
     clear H_;
-    let nt := gen_table galg x' in
+    let nt := gen_table ga x' in
     match nt with
     | (?n, ?table) =>
-      let ex := to_exp galg table x' in
-      replace x' with (exp2G galg d ex table); [|
-      simpl in *; gautorewrite galg; auto]; [
-      replace (exp2G galg d ex table) with (nf2G galg d (exp2nf F ex) table); [|
+      let ex := to_exp ga table x' in
+      replace x' with (exp2G ga d ex table); [|
+      simpl in *; gautorewrite ga; auto]; [
+      replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table); [|
       symmetry; apply nf_inj; unfold table_dim; firstorder]|]
-    end end|..]|..]; simpl; gautorewrite galg.
+    end end|..]|..]; simpl; gautorewrite ga.
 
 Ltac field_vanish' x f0 :=
   try (replace x with f0 by field).
@@ -623,16 +630,16 @@ Ltac field_vanish galg :=
     end
   ).
 
-Ltac galgebra d galg :=
-  let dim := get_dim galg in
-  let F := get_field galg in
+Ltac galgebra d ga :=
+  let dim := get_dim ga in
+  let F := get_field ga in
   let f0 := eval simpl in (Kzero F) in
   match goal with
   | |- ?x = _ =>
-    galg_simplify d x galg; [
+    galg_simplify d x ga; [
     match goal with
     | |- _ = ?y =>
-      galg_simplify d y galg; [
-      field_vanish galg|..]
+      galg_simplify d y ga; [
+      field_vanish ga|..]
     end|..]
-  end; [gautorewrite galg; [solve [repeat (field || f_equal)]|..]|..].
+  end; [gautorewrite ga; [solve [repeat (field || f_equal)]|..]|..].
