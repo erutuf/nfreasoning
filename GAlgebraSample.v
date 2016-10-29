@@ -33,8 +33,7 @@ Section Sample.
     = k *! l .^ y *^ x +^ ((-! l) .^ (k .^ y *^ x) +^ k .^ z) +^ l .^ z.
   Proof.
     intros.
-    galgebra n G_GAlg.
-    firstorder.
+    galgebra n G_GAlg. all: repeat rewrite H; simpl; firstorder.
   Qed.
 End Sample.
 
@@ -195,30 +194,29 @@ Section ListSample.
     intros. inversion H. f_equal; [field|auto].
   Qed.
 
-  Lemma Vscalar_mult_comm_r : forall k l1 l2, length l1 = length l2 ->
-    Vmult l1 (Vscalar k l2) = Vscalar k (Vmult l1 l2).
-  Proof with simpl in *.
-    unfold Vscalar, Vmult.
-    induction l1; destruct l2; simpl in *; congruence || auto...
-    intros. inversion H. f_equal; [field|auto].
-  Qed.
-
   Definition list_GAlg : @GAlgebra R (list R) (@length R) R_Field :=
     mkGAlg (@length R) R_Field V0 V1 Vplus Vminus Vmult Vscalar
     V0_dim V1_dim Vplus_dim Vmult_dim Vscalar_dim Vminus_def
     Vplus_ident_l Vmult_ident_l Vplus_assoc Vplus_comm Vmult_assoc Vmult_comm
     Vplus_mult_distrib_l Vscalar_plus_distrib Vscalar_zero Rplus_scalar_distrib
-    Rmult_scalar_comm Vscalar_one Vscalar_mult_comm_l Vscalar_mult_comm_r.
+    Rmult_scalar_comm Vscalar_one Vscalar_mult_comm_l.
 
   Infix "+^" := Vplus (at level 50, left associativity).
   Infix "*^" := Vmult (at level 40, left associativity).
+  Infix "-^" := Vminus (at level 50, left associativity).
   Infix ".^" := Vscalar (at level 45, no associativity).
 
   Goal forall k1 k2 v1 v2 n, length v1 = n -> length v2 = n ->
     (k1 .^ v1) +^ k2 .^ (v1 *^ v2) +^ (k2 - k1) .^ v1 = (k2 .^ v1) *^ v2 +^ k2 .^ v1.
   Proof.
     intros.
-    galgebra n list_GAlg.
-    firstorder; substq; auto.
+    galgebra n list_GAlg. all: simpl; firstorder.
+  Qed.
+
+  Goal forall v1 v2 n, length v1 = S n -> length v2 = S n ->
+    v1 = v2 +^ (v1 -^ v2).
+  Proof.
+    intros.
+    galgebra (S n) list_GAlg. firstorder.
   Qed.
 End ListSample.
