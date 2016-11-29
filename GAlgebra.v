@@ -1,6 +1,35 @@
 Require Import List Field PeanoNat Arith.
-Require Import Substq.
 Set Implicit Arguments.
+
+Definition done_sbt A (H : Type)(t : A) := True.
+
+Ltac substq1 := repeat
+    match goal with
+    | [H : forall _ : ?T, _ = _,  t0 : ?T |- _] =>
+      let P := type of H in
+      match goal with
+      | H0 : done_sbt P t0 |- _ => fail 1
+      | _ => rewrite (H t0) in *; assert (done_sbt P t0) by constructor
+      end
+    | [H : forall _ : ?T, _ -> _ = _,  t0 : ?T |- _] =>
+      let P := type of H in
+      match goal with
+      | H0 : done_sbt P t0 |- _ => fail 1
+      | _ => rewrite (H t0) in * by auto; assert (done_sbt P t0) by constructor
+      end
+    end.
+
+Ltac substq0 := subst; repeat
+    match goal with
+    | H : _ = _ |- _ =>
+        let P := type of H in
+        match goal with
+        | _ : done_sbt P tt |- _ => fail 1
+        | _ => rewrite H in *; assert (done_sbt P tt) by constructor
+        end
+    end.
+
+Ltac substq := substq0; substq1.
 
 Record Field K := mkField
   { Kzero : K; Kone : K;
@@ -137,6 +166,39 @@ Section GAlgebra.
     intros. rewrite G_GAlg.(Gmult_comm).
     - apply Gmult_zero_l. auto.
     - rewrite G_GAlg.(Gzero_dim). auto.
+  Qed.
+
+  Lemma Gscalar_G0 : forall k n, k .^ (G0 n) = G0 n.
+  Proof with simpl in *.
+    intros. rewrite <- (@Gplus_minus_zero (G0 n)) at 1.
+    rewrite G_GAlg.(Gminus_def).
+    rewrite G_GAlg.(Gscalar_plus_distrib).
+    rewrite G_GAlg.(Kmult_scalar_comm).
+    replace (k *! (-! K1)) with ((-! K1) *! k) by field.
+    rewrite <- G_GAlg.(Kmult_scalar_comm).
+    rewrite <- G_GAlg.(Gminus_def). apply Gplus_minus_zero.
+    all: try rewrite G_GAlg.(Gscalar_dim); try rewrite G_GAlg.(Gzero_dim); auto.
+  Qed.
+
+  Lemma Geq_eq_zero : forall l1 l2, dim l1 = dim l2 ->
+    l1 -^ l2 = G0 (dim l1) -> l1 = l2.
+  Proof with simpl in *.
+    intros. rewrite <- (Gplus_ident_r (n := dim l1)) by auto.
+    rewrite <- (@Gplus_ident_r l2 (dim l2)) by auto.
+    rewrite <- (@Gplus_minus_zero l2) by auto.
+    rewrite G_GAlg.(Gminus_def) in *. rewrite <- G_GAlg.(Gplus_assoc).
+    rewrite (G_GAlg.(Gplus_comm) l1).
+    rewrite G_GAlg.(Gplus_assoc). f_equal. rewrite <- H. auto.
+    all: try rewrite G_GAlg.(Gscalar_dim); auto.
+  Qed.
+
+  Lemma Gplus_neg_zero : forall l,
+      l +^ ((-! K1) .^ l) = G0 (dim l).
+  Proof.
+    intros.
+    rewrite <- (@Gplus_minus_zero l (dim l)) by auto.
+    rewrite Gminus_def.
+    auto.
   Qed.
 
   Inductive Ident :=
@@ -464,7 +526,7 @@ Hint Rewrite Gminus_def Gmult_zero_l Gmult_zero_r Gplus_ident_l Gplus_ident_r
   Gmult_ident_l Gmult_ident_r Gplus_mult_distrib_l Gplus_mult_distrib_r
   Gscalar_plus_distrib Gscalar_zero Gscalar_one Gscalar_mult_comm_l
   Gscalar_mult_comm_r Kplus_scalar_distrib Kmult_scalar_comm Gplus_assoc
-  Gmult_assoc : galg.
+  Gmult_assoc Gscalar_G0 Gplus_neg_zero : galg.
 
 Create HintDb gdim.
 Hint Rewrite Gzero_dim Gone_dim Gplus_dim Gmult_dim Gminus_dim Gscalar_dim : gdim.
@@ -672,19 +734,42 @@ Ltac galg_simplify_with_table d x ga table :=
 Ltac galg_simplify d x ga :=
   let G := type of x in
   let F := get_field ga in
+  let dim := get_dim ga in
   let H_ := fresh "H_" in
   assert (galg_helper x) as H_ by constructor;
-  gautorewrite ga; [gautorewrite ga in H_; [
-    match type of H_ with
-    | galg_helper ?x' =>
-    clear H_;
-    let table := gen_table ga x' in
-    let ex := to_exp ga table x' in
-    replace x' with (exp2G ga d ex table); [|
-    simpl in *; gautorewrite ga; auto]; [
-    replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table); [|
-    symmetry; apply nf_inj; unfold table_dim]|]
-    end|..]|..]; simpl; field_vanish ga; gautorewrite ga.
+  let table := gen_table ga x in
+  let H_ := fresh in
+  enough (table_dim dim table d) as H_; unfold table_dim in *;
+  [
+    gautorewrite ga;
+    [
+      gautorewrite ga in H_;
+      [
+        match type of H_ with
+        | galg_helper ?x' =>
+          clear H_;
+          let ex := to_exp ga table x' in
+          replace x' with (exp2G ga d ex table) by
+              (simpl in *; gautorewrite ga; auto);
+          replace (exp2G ga d ex table) with (nf2G ga d (exp2nf F ex) table) by
+              (symmetry; apply nf_inj; unfold table_dim; auto)
+        end
+      |..]
+    |..];
+    [
+      solve [
+          simpl;
+          field_vanish ga;
+          gautorewrite ga ]
+    |
+      repeat gdautorewrite ga;
+      repeat rewrite H_;
+      simpl;
+      auto
+    ]
+  |
+    apply Forall_forall; simpl
+  ].
 
 Ltac galgebra d ga :=
   let dim := get_dim ga in
@@ -701,21 +786,15 @@ Ltac galgebra d ga :=
     let H_ := fresh in
     enough (table_dim dim table d') as H_; unfold table_dim in *;
     [
+      apply (Geq_eq_zero ga);
+      [ repeat gdautorewrite ga; repeat rewrite H_; simpl; now (tauto || firstorder)|];
       gautorewrite ga;
       [
         match goal with
-        | |- ?x' = _ => galg_simplify_with_table d' x' ga table;
-          [
-            match goal with
-            | |- _ = ?y' => gautorewrite ga; [galg_simplify_with_table d' y' ga table|..]
-            end
-          |..]
+        | |- ?x' = _ => galg_simplify_with_table d' x' ga table
         end;
         [
-          gautorewrite ga;
-          [
-            solve [repeat (field || f_equal; auto)]
-          |..]
+          auto
         |..]
       |..];
       repeat (gdautorewrite ga);

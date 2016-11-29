@@ -33,7 +33,7 @@ Section Sample.
     = k *! l .^ y *^ x +^ ((-! l) .^ (k .^ y *^ x) +^ k .^ z) +^ l .^ z.
   Proof.
     intros.
-    galgebra n G_GAlg. all: repeat rewrite H; simpl; firstorder.
+    galgebra n G_GAlg. firstorder.
   Qed.
 End Sample.
 
@@ -218,5 +218,10 @@ Section ListSample.
   Proof.
     intros.
     galgebra (S n) list_GAlg. firstorder.
+  Qed.
+
+  Goal forall n, (V0 n -^ V0 n) = V0 n.
+  Proof.
+    intros. galgebra n list_GAlg. firstorder.
   Qed.
 End ListSample.
